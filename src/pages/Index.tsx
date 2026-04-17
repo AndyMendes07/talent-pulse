@@ -9,6 +9,8 @@ import {
   Target,
   Activity,
   XCircle,
+  Inbox,
+  CalendarRange,
 } from "lucide-react";
 import {
   BarChart,
@@ -25,12 +27,36 @@ import {
   RadialBarChart,
   RadialBar,
 } from "recharts";
-import { vagas, avg, sum, formatDate, type Vaga } from "@/lib/recruitment";
+import { vagas, avg, sum, formatDate, excelDateToJs, type Vaga } from "@/lib/recruitment";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { ChartCard } from "@/components/dashboard/ChartCard";
 import { FiltersBar, type Filters } from "@/components/dashboard/FiltersBar";
+import { PeriodFilter, type PeriodRange } from "@/components/dashboard/PeriodFilter";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+/** A vaga is considered "in" the period if its opening date falls within it.
+ *  This makes "volume of vacancies in the period" intuitive and consistent. */
+const filterByPeriod = (data: Vaga[], from: Date | null, to: Date | null) => {
+  if (!from && !to) return data;
+  const start = from ? from.getTime() : -Infinity;
+  const end = to
+    ? new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59).getTime()
+    : Infinity;
+  return data.filter((v) => {
+    const op = excelDateToJs(v.dataAbertura)?.getTime();
+    if (op === undefined) return false;
+    return op >= start && op <= end;
+  });
+};
+
+const pctChange = (curr: number, prev: number): number | null => {
+  if (prev === 0) return curr === 0 ? 0 : null;
+  return (curr - prev) / prev;
+};
+
 
 const PALETTE = [
   "hsl(217 91% 45%)",
@@ -51,31 +77,53 @@ const Index = () => {
     tipoVaga: "",
     setor: "",
   });
+  const [period, setPeriod] = useState<PeriodRange>({ from: null, to: null });
 
-  const filtered = useMemo(() => {
-    return vagas.filter(
-      (v) =>
-        (!filters.status || v.status === filters.status) &&
-        (!filters.recrutador || v.recrutador === filters.recrutador) &&
-        (!filters.tipoVaga || v.tipoVaga === filters.tipoVaga) &&
-        (!filters.setor || v.setor === filters.setor)
-    );
-  }, [filters]);
+  // Apply non-period filters first (used for backlog "currently open" KPI)
+  const filteredNoPeriod = useMemo(
+    () =>
+      vagas.filter(
+        (v) =>
+          (!filters.status || v.status === filters.status) &&
+          (!filters.recrutador || v.recrutador === filters.recrutador) &&
+          (!filters.tipoVaga || v.tipoVaga === filters.tipoVaga) &&
+          (!filters.setor || v.setor === filters.setor)
+      ),
+    [filters]
+  );
 
-  const kpis = useMemo(() => {
-    const total = filtered.length;
-    const fechadas = filtered.filter((v) => v.status === "Fechada").length;
-    const abertas = filtered.filter((v) => v.status === "Aberta").length;
-    const canceladas = filtered.filter((v) => v.status === "Cancelada").length;
+  // Previous-period range (same length, immediately before)
+  const previousRange = useMemo<PeriodRange>(() => {
+    if (!period.from || !period.to) return { from: null, to: null };
+    const lenMs = period.to.getTime() - period.from.getTime();
+    const prevTo = new Date(period.from.getTime() - 24 * 60 * 60 * 1000);
+    const prevFrom = new Date(prevTo.getTime() - lenMs);
+    return { from: prevFrom, to: prevTo };
+  }, [period]);
+
+  const filtered = useMemo(
+    () => filterByPeriod(filteredNoPeriod, period.from, period.to),
+    [filteredNoPeriod, period]
+  );
+
+  const filteredPrev = useMemo(
+    () => filterByPeriod(filteredNoPeriod, previousRange.from, previousRange.to),
+    [filteredNoPeriod, previousRange]
+  );
+
+  const computeKpis = (arr: Vaga[]) => {
+    const total = arr.length;
+    const fechadasArr = arr.filter((v) => v.status === "Fechada");
+    const fechadas = fechadasArr.length;
+    const abertas = arr.filter((v) => v.status === "Aberta").length;
+    const canceladas = arr.filter((v) => v.status === "Cancelada").length;
     const taxaFechamento = total ? (fechadas / total) * 100 : 0;
-
-    const fechadasArr = filtered.filter((v) => v.status === "Fechada");
     const slaMedio = avg(fechadasArr.map((v) => v.diasUteis));
     const slaCorridoMedio = avg(fechadasArr.map((v) => v.diasCorridos));
+    const tempoMedioFechamento = avg(fechadasArr.map((v) => v.diasCorridos));
     const atrasoMedio = avg(fechadasArr.map((v) => v.atraso));
     const noPrazo = fechadasArr.filter((v) => (v.atraso ?? 0) <= 0).length;
     const pctNoPrazo = fechadasArr.length ? (noPrazo / fechadasArr.length) * 100 : 0;
-
     return {
       total,
       fechadas,
@@ -84,9 +132,52 @@ const Index = () => {
       taxaFechamento,
       slaMedio,
       slaCorridoMedio,
+      tempoMedioFechamento,
       atrasoMedio,
       pctNoPrazo,
     };
+  };
+
+  const kpis = useMemo(() => computeKpis(filtered), [filtered]);
+  const kpisPrev = useMemo(() => computeKpis(filteredPrev), [filteredPrev]);
+
+  // Backlog = vagas atualmente em aberto (ignora período, respeita filtros)
+  const backlogAtual = useMemo(
+    () => filteredNoPeriod.filter((v) => v.status === "Aberta").length,
+    [filteredNoPeriod]
+  );
+
+  // Evolução mensal: abertas / fechadas / total no mês
+  const evolucaoMensal = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; abertas: number; fechadas: number; total: number; sort: number }>();
+    const ensure = (d: Date) => {
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: `${MONTH_LABELS[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`,
+          abertas: 0,
+          fechadas: 0,
+          total: 0,
+          sort: d.getFullYear() * 12 + d.getMonth(),
+        });
+      }
+      return map.get(key)!;
+    };
+    filtered.forEach((v) => {
+      const op = excelDateToJs(v.dataAbertura);
+      if (op) {
+        const e = ensure(op);
+        e.abertas += 1;
+        e.total += 1;
+      }
+      const cl = excelDateToJs(v.dataFechamento);
+      if (cl && v.status === "Fechada") {
+        const e = ensure(cl);
+        e.fechadas += 1;
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.sort - b.sort);
   }, [filtered]);
 
   // Por tipo de vaga
@@ -221,8 +312,112 @@ const Index = () => {
 
       <main className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
         {/* Filtros */}
-        <section className="bg-card rounded-xl p-4 border border-border/60 shadow-card">
-          <FiltersBar filters={filters} setFilters={setFilters} data={vagas} />
+        <section className="bg-card rounded-xl p-4 border border-border/60 shadow-card space-y-4">
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <CalendarRange className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">Período</h3>
+              {period.from && period.to && (
+                <Badge variant="secondary" className="font-normal">
+                  {period.from.toLocaleDateString("pt-BR")} → {period.to.toLocaleDateString("pt-BR")}
+                  {previousRange.from && previousRange.to && (
+                    <span className="ml-2 text-muted-foreground">
+                      vs {previousRange.from.toLocaleDateString("pt-BR")} → {previousRange.to.toLocaleDateString("pt-BR")}
+                    </span>
+                  )}
+                </Badge>
+              )}
+            </div>
+            <PeriodFilter range={period} setRange={setPeriod} />
+          </div>
+          <div className="border-t border-border/60 pt-4">
+            <FiltersBar filters={filters} setFilters={setFilters} data={vagas} />
+          </div>
+        </section>
+
+        {/* KPIs Estratégicos - com comparativo */}
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="h-1.5 w-8 rounded-full bg-gradient-primary" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Indicadores Estratégicos {period.from && period.to ? "— vs período anterior" : ""}
+            </h2>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <KpiCard
+              variant="primary"
+              label="Volume de Vagas"
+              value={kpis.total}
+              hint="Vagas no período"
+              icon={<Briefcase className="h-5 w-5" />}
+              comparison={{ pct: pctChange(kpis.total, kpisPrev.total), previousValue: kpisPrev.total }}
+            />
+            <KpiCard
+              variant="accent"
+              label="Tempo Médio Fechamento"
+              value={`${kpis.tempoMedioFechamento.toFixed(0)}d`}
+              hint="Dias corridos médios"
+              icon={<Clock className="h-5 w-5" />}
+              comparison={{
+                pct: pctChange(kpis.tempoMedioFechamento, kpisPrev.tempoMedioFechamento),
+                previousValue: `${kpisPrev.tempoMedioFechamento.toFixed(0)}d`,
+                positiveIsGood: false,
+              }}
+            />
+            <KpiCard
+              variant="success"
+              label="Taxa de Fechamento"
+              value={`${kpis.taxaFechamento.toFixed(1)}%`}
+              hint={`${kpis.fechadas} de ${kpis.total} vagas`}
+              icon={<CheckCircle2 className="h-5 w-5" />}
+              comparison={{
+                pct: pctChange(kpis.taxaFechamento, kpisPrev.taxaFechamento),
+                previousValue: `${kpisPrev.taxaFechamento.toFixed(1)}%`,
+              }}
+            />
+            <KpiCard
+              variant="warning"
+              label="Backlog Atual"
+              value={backlogAtual}
+              hint="Vagas em aberto agora"
+              icon={<Inbox className="h-5 w-5" />}
+            />
+          </div>
+        </section>
+
+        {/* Evolução Mensal */}
+        <section>
+          <ChartCard
+            title="Evolução Mensal de Vagas"
+            subtitle="Aberturas, fechamentos e total mês a mês"
+            className="h-[340px]"
+          >
+            {evolucaoMensal.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+                Sem dados no período selecionado
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={evolucaoMensal} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="abertas" name="Abertas" fill="hsl(38 95% 55%)" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="fechadas" name="Fechadas" fill="hsl(217 91% 45%)" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="total" name="Total no mês" fill="hsl(175 70% 41%)" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
         </section>
 
         {/* C-LEVEL KPIs */}
