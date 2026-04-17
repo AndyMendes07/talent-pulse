@@ -312,8 +312,112 @@ const Index = () => {
 
       <main className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
         {/* Filtros */}
-        <section className="bg-card rounded-xl p-4 border border-border/60 shadow-card">
-          <FiltersBar filters={filters} setFilters={setFilters} data={vagas} />
+        <section className="bg-card rounded-xl p-4 border border-border/60 shadow-card space-y-4">
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <CalendarRange className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">Período</h3>
+              {period.from && period.to && (
+                <Badge variant="secondary" className="font-normal">
+                  {period.from.toLocaleDateString("pt-BR")} → {period.to.toLocaleDateString("pt-BR")}
+                  {previousRange.from && previousRange.to && (
+                    <span className="ml-2 text-muted-foreground">
+                      vs {previousRange.from.toLocaleDateString("pt-BR")} → {previousRange.to.toLocaleDateString("pt-BR")}
+                    </span>
+                  )}
+                </Badge>
+              )}
+            </div>
+            <PeriodFilter range={period} setRange={setPeriod} />
+          </div>
+          <div className="border-t border-border/60 pt-4">
+            <FiltersBar filters={filters} setFilters={setFilters} data={vagas} />
+          </div>
+        </section>
+
+        {/* KPIs Estratégicos - com comparativo */}
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="h-1.5 w-8 rounded-full bg-gradient-primary" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Indicadores Estratégicos {period.from && period.to ? "— vs período anterior" : ""}
+            </h2>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <KpiCard
+              variant="primary"
+              label="Volume de Vagas"
+              value={kpis.total}
+              hint="Vagas no período"
+              icon={<Briefcase className="h-5 w-5" />}
+              comparison={{ pct: pctChange(kpis.total, kpisPrev.total), previousValue: kpisPrev.total }}
+            />
+            <KpiCard
+              variant="accent"
+              label="Tempo Médio Fechamento"
+              value={`${kpis.tempoMedioFechamento.toFixed(0)}d`}
+              hint="Dias corridos médios"
+              icon={<Clock className="h-5 w-5" />}
+              comparison={{
+                pct: pctChange(kpis.tempoMedioFechamento, kpisPrev.tempoMedioFechamento),
+                previousValue: `${kpisPrev.tempoMedioFechamento.toFixed(0)}d`,
+                positiveIsGood: false,
+              }}
+            />
+            <KpiCard
+              variant="success"
+              label="Taxa de Fechamento"
+              value={`${kpis.taxaFechamento.toFixed(1)}%`}
+              hint={`${kpis.fechadas} de ${kpis.total} vagas`}
+              icon={<CheckCircle2 className="h-5 w-5" />}
+              comparison={{
+                pct: pctChange(kpis.taxaFechamento, kpisPrev.taxaFechamento),
+                previousValue: `${kpisPrev.taxaFechamento.toFixed(1)}%`,
+              }}
+            />
+            <KpiCard
+              variant="warning"
+              label="Backlog Atual"
+              value={backlogAtual}
+              hint="Vagas em aberto agora"
+              icon={<Inbox className="h-5 w-5" />}
+            />
+          </div>
+        </section>
+
+        {/* Evolução Mensal */}
+        <section>
+          <ChartCard
+            title="Evolução Mensal de Vagas"
+            subtitle="Aberturas, fechamentos e total mês a mês"
+            className="h-[340px]"
+          >
+            {evolucaoMensal.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+                Sem dados no período selecionado
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={evolucaoMensal} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="abertas" name="Abertas" fill="hsl(38 95% 55%)" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="fechadas" name="Fechadas" fill="hsl(217 91% 45%)" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="total" name="Total no mês" fill="hsl(175 70% 41%)" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
         </section>
 
         {/* C-LEVEL KPIs */}
