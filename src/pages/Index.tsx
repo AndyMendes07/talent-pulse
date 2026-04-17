@@ -502,7 +502,7 @@ const Index = () => {
             </ResponsiveContainer>
           </ChartCard>
 
-          <ChartCard title="Funil — Etapas Atuais" subtitle="Distribuição por etapa do processo" className="h-[320px]">
+          <ChartCard title="Funil — Etapas Atuais" subtitle="Clique numa barra para ver as vagas da etapa" className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart layout="vertical" data={funilEtapas} margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
@@ -516,7 +516,13 @@ const Index = () => {
                     fontSize: 12,
                   }}
                 />
-                <Bar dataKey="total" fill="hsl(217 91% 45%)" radius={[0, 6, 6, 0]}>
+                <Bar
+                  dataKey="total"
+                  fill="hsl(217 91% 45%)"
+                  radius={[0, 6, 6, 0]}
+                  cursor="pointer"
+                  onClick={(d: any) => setEtapaSelecionada(d?.etapa ?? null)}
+                >
                   {funilEtapas.map((_, i) => (
                     <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
                   ))}
@@ -524,6 +530,36 @@ const Index = () => {
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
+
+          <Dialog open={!!etapaSelecionada} onOpenChange={(o) => !o && setEtapaSelecionada(null)}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Vagas em {etapaSelecionada}</DialogTitle>
+                <DialogDescription>
+                  {filtered.filter((v) => v.etapa === etapaSelecionada).length} vaga(s) nesta etapa
+                </DialogDescription>
+              </DialogHeader>
+              <div className="max-h-[60vh] overflow-auto">
+                <ul className="divide-y divide-border/60">
+                  {filtered
+                    .filter((v) => v.etapa === etapaSelecionada)
+                    .map((v, i) => (
+                      <li key={i} className="py-2 px-1 flex items-center justify-between gap-3 text-sm">
+                        <span className="text-foreground">{v.cargo ?? "—"}</span>
+                        {v.recrutador && (
+                          <span className="text-xs text-muted-foreground">{v.recrutador}</span>
+                        )}
+                      </li>
+                    ))}
+                  {filtered.filter((v) => v.etapa === etapaSelecionada).length === 0 && (
+                    <li className="py-4 text-sm text-muted-foreground text-center">
+                      Nenhuma vaga nesta etapa para os filtros atuais.
+                    </li>
+                  )}
+                </ul>
+              </div>
+            </DialogContent>
+          </Dialog>
         </section>
 
         {/* Performance Recrutador */}
