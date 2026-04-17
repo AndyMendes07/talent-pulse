@@ -77,16 +77,39 @@ const Index = () => {
     tipoVaga: "",
     setor: "",
   });
+  const [period, setPeriod] = useState<PeriodRange>({ from: null, to: null });
 
-  const filtered = useMemo(() => {
-    return vagas.filter(
-      (v) =>
-        (!filters.status || v.status === filters.status) &&
-        (!filters.recrutador || v.recrutador === filters.recrutador) &&
-        (!filters.tipoVaga || v.tipoVaga === filters.tipoVaga) &&
-        (!filters.setor || v.setor === filters.setor)
-    );
-  }, [filters]);
+  // Apply non-period filters first (used for backlog "currently open" KPI)
+  const filteredNoPeriod = useMemo(
+    () =>
+      vagas.filter(
+        (v) =>
+          (!filters.status || v.status === filters.status) &&
+          (!filters.recrutador || v.recrutador === filters.recrutador) &&
+          (!filters.tipoVaga || v.tipoVaga === filters.tipoVaga) &&
+          (!filters.setor || v.setor === filters.setor)
+      ),
+    [filters]
+  );
+
+  // Previous-period range (same length, immediately before)
+  const previousRange = useMemo<PeriodRange>(() => {
+    if (!period.from || !period.to) return { from: null, to: null };
+    const lenMs = period.to.getTime() - period.from.getTime();
+    const prevTo = new Date(period.from.getTime() - 24 * 60 * 60 * 1000);
+    const prevFrom = new Date(prevTo.getTime() - lenMs);
+    return { from: prevFrom, to: prevTo };
+  }, [period]);
+
+  const filtered = useMemo(
+    () => filterByPeriod(filteredNoPeriod, period.from, period.to),
+    [filteredNoPeriod, period]
+  );
+
+  const filteredPrev = useMemo(
+    () => filterByPeriod(filteredNoPeriod, previousRange.from, previousRange.to),
+    [filteredNoPeriod, previousRange]
+  );
 
   const kpis = useMemo(() => {
     const total = filtered.length;
