@@ -9,6 +9,8 @@ import {
   Target,
   Activity,
   XCircle,
+  Inbox,
+  CalendarRange,
 } from "lucide-react";
 import {
   BarChart,
@@ -25,12 +27,36 @@ import {
   RadialBarChart,
   RadialBar,
 } from "recharts";
-import { vagas, avg, sum, formatDate, type Vaga } from "@/lib/recruitment";
+import { vagas, avg, sum, formatDate, excelDateToJs, type Vaga } from "@/lib/recruitment";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { ChartCard } from "@/components/dashboard/ChartCard";
 import { FiltersBar, type Filters } from "@/components/dashboard/FiltersBar";
+import { PeriodFilter, type PeriodRange } from "@/components/dashboard/PeriodFilter";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+/** A vaga is considered "in" the period if its opening date falls within it.
+ *  This makes "volume of vacancies in the period" intuitive and consistent. */
+const filterByPeriod = (data: Vaga[], from: Date | null, to: Date | null) => {
+  if (!from && !to) return data;
+  const start = from ? from.getTime() : -Infinity;
+  const end = to
+    ? new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59).getTime()
+    : Infinity;
+  return data.filter((v) => {
+    const op = excelDateToJs(v.dataAbertura)?.getTime();
+    if (op === undefined) return false;
+    return op >= start && op <= end;
+  });
+};
+
+const pctChange = (curr: number, prev: number): number | null => {
+  if (prev === 0) return curr === 0 ? 0 : null;
+  return (curr - prev) / prev;
+};
+
 
 const PALETTE = [
   "hsl(217 91% 45%)",
