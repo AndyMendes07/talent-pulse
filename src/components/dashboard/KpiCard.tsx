@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface KpiCardProps {
@@ -8,6 +9,12 @@ interface KpiCardProps {
   icon?: ReactNode;
   variant?: "default" | "primary" | "accent" | "warning" | "danger" | "success";
   delta?: { value: string; positive?: boolean };
+  /** Comparison vs previous period. positiveIsGood defaults to true */
+  comparison?: {
+    pct: number | null;
+    previousValue?: ReactNode;
+    positiveIsGood?: boolean;
+  };
 }
 
 const variantBg: Record<NonNullable<KpiCardProps["variant"]>, string> = {
@@ -26,8 +33,15 @@ export const KpiCard = ({
   icon,
   variant = "default",
   delta,
+  comparison,
 }: KpiCardProps) => {
   const isColored = variant !== "default";
+  const positiveIsGood = comparison?.positiveIsGood ?? true;
+  const pct = comparison?.pct ?? null;
+  const isUp = pct !== null && pct > 0.05;
+  const isDown = pct !== null && pct < -0.05;
+  const isGood = (isUp && positiveIsGood) || (isDown && !positiveIsGood);
+  const isBad = (isDown && positiveIsGood) || (isUp && !positiveIsGood);
   return (
     <div
       className={cn(
@@ -80,6 +94,52 @@ export const KpiCard = ({
           )}
         >
           {delta.value}
+        </p>
+      )}
+      {comparison && pct !== null && (
+        <div
+          className={cn(
+            "text-xs mt-3 font-medium flex items-center gap-1",
+            isColored
+              ? "opacity-90"
+              : isGood
+              ? "text-success"
+              : isBad
+              ? "text-destructive"
+              : "text-muted-foreground"
+          )}
+        >
+          {isUp ? (
+            <ArrowUp className="h-3 w-3" />
+          ) : isDown ? (
+            <ArrowDown className="h-3 w-3" />
+          ) : (
+            <Minus className="h-3 w-3" />
+          )}
+          <span>
+            {pct > 0 ? "+" : ""}
+            {(pct * 100).toFixed(1)}%
+          </span>
+          {comparison.previousValue !== undefined && (
+            <span
+              className={cn(
+                "ml-1",
+                isColored ? "opacity-75" : "text-muted-foreground"
+              )}
+            >
+              vs {comparison.previousValue}
+            </span>
+          )}
+        </div>
+      )}
+      {comparison && pct === null && (
+        <p
+          className={cn(
+            "text-xs mt-3",
+            isColored ? "opacity-75" : "text-muted-foreground"
+          )}
+        >
+          Sem dado anterior
         </p>
       )}
     </div>
