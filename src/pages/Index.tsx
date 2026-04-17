@@ -111,20 +111,19 @@ const Index = () => {
     [filteredNoPeriod, previousRange]
   );
 
-  const kpis = useMemo(() => {
-    const total = filtered.length;
-    const fechadas = filtered.filter((v) => v.status === "Fechada").length;
-    const abertas = filtered.filter((v) => v.status === "Aberta").length;
-    const canceladas = filtered.filter((v) => v.status === "Cancelada").length;
+  const computeKpis = (arr: Vaga[]) => {
+    const total = arr.length;
+    const fechadasArr = arr.filter((v) => v.status === "Fechada");
+    const fechadas = fechadasArr.length;
+    const abertas = arr.filter((v) => v.status === "Aberta").length;
+    const canceladas = arr.filter((v) => v.status === "Cancelada").length;
     const taxaFechamento = total ? (fechadas / total) * 100 : 0;
-
-    const fechadasArr = filtered.filter((v) => v.status === "Fechada");
     const slaMedio = avg(fechadasArr.map((v) => v.diasUteis));
     const slaCorridoMedio = avg(fechadasArr.map((v) => v.diasCorridos));
+    const tempoMedioFechamento = avg(fechadasArr.map((v) => v.diasCorridos));
     const atrasoMedio = avg(fechadasArr.map((v) => v.atraso));
     const noPrazo = fechadasArr.filter((v) => (v.atraso ?? 0) <= 0).length;
     const pctNoPrazo = fechadasArr.length ? (noPrazo / fechadasArr.length) * 100 : 0;
-
     return {
       total,
       fechadas,
@@ -133,9 +132,52 @@ const Index = () => {
       taxaFechamento,
       slaMedio,
       slaCorridoMedio,
+      tempoMedioFechamento,
       atrasoMedio,
       pctNoPrazo,
     };
+  };
+
+  const kpis = useMemo(() => computeKpis(filtered), [filtered]);
+  const kpisPrev = useMemo(() => computeKpis(filteredPrev), [filteredPrev]);
+
+  // Backlog = vagas atualmente em aberto (ignora período, respeita filtros)
+  const backlogAtual = useMemo(
+    () => filteredNoPeriod.filter((v) => v.status === "Aberta").length,
+    [filteredNoPeriod]
+  );
+
+  // Evolução mensal: abertas / fechadas / total no mês
+  const evolucaoMensal = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; abertas: number; fechadas: number; total: number; sort: number }>();
+    const ensure = (d: Date) => {
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: `${MONTH_LABELS[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`,
+          abertas: 0,
+          fechadas: 0,
+          total: 0,
+          sort: d.getFullYear() * 12 + d.getMonth(),
+        });
+      }
+      return map.get(key)!;
+    };
+    filtered.forEach((v) => {
+      const op = excelDateToJs(v.dataAbertura);
+      if (op) {
+        const e = ensure(op);
+        e.abertas += 1;
+        e.total += 1;
+      }
+      const cl = excelDateToJs(v.dataFechamento);
+      if (cl && v.status === "Fechada") {
+        const e = ensure(cl);
+        e.fechadas += 1;
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.sort - b.sort);
   }, [filtered]);
 
   // Por tipo de vaga
