@@ -34,6 +34,7 @@ import { FiltersBar, type Filters } from "@/components/dashboard/FiltersBar";
 import { PeriodFilter, type PeriodRange } from "@/components/dashboard/PeriodFilter";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
