@@ -79,6 +79,7 @@ const Index = () => {
     setor: "",
   });
   const [period, setPeriod] = useState<PeriodRange>({ from: null, to: null });
+  const [etapaSelecionada, setEtapaSelecionada] = useState<string | null>(null);
 
   // Apply non-period filters first (used for backlog "currently open" KPI)
   const filteredNoPeriod = useMemo(
